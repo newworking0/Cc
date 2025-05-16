@@ -8,6 +8,7 @@ import stripe
 # === Your keys ===
 BOT_TOKEN = "7928470785:AAHMz54GOWoI-NsbD2zyj0Av_VbnqX7fYzI"
 STRIPE_SECRET_KEY = "sk_test_51RPHEyPKJT4UzOPvvRdP59qoEt4h3khaN3xlGusDd1jvT01Houk9VsaH4geyzzWSBICupYkn5kuwEjTA2C3woy8N00Iph2LvSG"
+CHECKED_BY = "CheckerBot"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 stripe.api_key = STRIPE_SECRET_KEY
@@ -51,7 +52,7 @@ def extract_card_info(text):
     return match.groups() if match else None
 
 def extract_multiple_cards(text):
-    lines = text.strip().splitlines()[1:]  # Skip command line
+    lines = text.strip().splitlines()[1:]
     cards = []
     for line in lines:
         match = re.match(r"(\d{16})\|(\d{2})\|(\d{4})\|(\d{3,4})", line)
@@ -59,14 +60,14 @@ def extract_multiple_cards(text):
             cards.append(match.groups())
     return cards
 
-def check_card(number, exp_month, exp_year, cvc, username):
+def check_card(number, exp_month, exp_year, cvc):
     bin_info = get_bin_info(number[:6])
-    card_type = bin_info.get("scheme", "Not Found").title() if bin_info else "Not Found"
+    card_type = bin_info.get("scheme", "Unknown").title() if bin_info else "Unknown"
     brand = bin_info.get("brand", "") if bin_info else ""
-    country = bin_info.get("country", {}).get("name", "Not Found") if bin_info else "Not Found"
+    country = bin_info.get("country", {}).get("name", "Unknown") if bin_info else "Unknown"
 
     try:
-        stripe.PaymentMethod.create(
+        payment_method = stripe.PaymentMethod.create(
             type="card",
             card={
                 "number": number,
@@ -86,7 +87,7 @@ def check_card(number, exp_month, exp_year, cvc, username):
         f"Card: {number}|{exp_month}|{exp_year}|{cvc}\n"
         f"Type: {card_type} {brand}\n"
         f"Country: {country}\n"
-        f"Checked by: @{username}\n"
+        f"Checked by: {CHECKED_BY}\n"
         f"{'-'*30}"
     )
 
@@ -121,10 +122,10 @@ def generate_cards(message):
     else:
         bin_text = (
             f"🏦 BIN Info:\n"
-            f"• Brand: {bin_info.get('scheme', 'Not Found').title()}\n"
-            f"• Type: {bin_info.get('type', 'Not Found').title()}\n"
-            f"• Bank: {bin_info.get('bank', {}).get('name', 'Not Found')}\n"
-            f"• Country: {bin_info.get('country', {}).get('name', 'Not Found')} {bin_info.get('country', {}).get('emoji', '')}\n"
+            f"• Brand: {bin_info.get('scheme', 'Unknown').title()}\n"
+            f"• Type: {bin_info.get('type', 'Unknown').title()}\n"
+            f"• Bank: {bin_info.get('bank', {}).get('name', 'Unknown')}\n"
+            f"• Country: {bin_info.get('country', {}).get('name', 'Unknown')} {bin_info.get('country', {}).get('emoji', '')}\n"
         )
 
     cards = []
@@ -144,8 +145,7 @@ def single_check(message):
         return
 
     bot.reply_to(message, "Checking...")
-    username = message.from_user.username or message.from_user.first_name or "UnknownUser"
-    result = check_card(*data, username)
+    result = check_card(*data)
     bot.reply_to(message, result)
 
 @bot.message_handler(func=lambda msg: msg.text.startswith('/mass'))
@@ -159,10 +159,9 @@ def mass_check(message):
         bot.reply_to(message, "Only 10 cards allowed at once.")
         return
 
-    username = message.from_user.username or message.from_user.first_name or "UnknownUser"
     for i, card in enumerate(cards, 1):
         bot.send_message(message.chat.id, f"Card {i}: Checking...")
-        result = check_card(*card, username)
+        result = check_card(*card)
         bot.send_message(message.chat.id, f"Card {i}:\n{result}")
         time.sleep(1.5)
 
